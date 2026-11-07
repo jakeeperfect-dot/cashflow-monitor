@@ -1,0 +1,8 @@
+{
+  "name": "kdcashflow",
+  "version": "1.0.0",
+  "description": "Standalone cash-in and cash-out monitoring system",
+  "main": "server.js",
+  "scripts": { "start": "node server.js", "dev": "node server.js" },
+  "engines": { "node": ">=18" }
+}
