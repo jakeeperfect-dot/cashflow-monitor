@@ -1,0 +1,139 @@
+@font-face {
+  font-family: "Montserrat";
+  src: url("./fonts/montserrat-bold.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Montserrat";
+  src: url("./fonts/montserrat-extrabold.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+}
+
+body {
+  font-size: 15px;
+}
+
+body,
+input,
+select,
+textarea,
+button {
+  font-family: "Montserrat", sans-serif;
+  font-weight: 700;
+}
+
+h1,
+h2,
+h3,
+.brand b,
+.nav,
+.nav span,
+.primary,
+.stat strong,
+.branchcard strong,
+.auth-card .brandmark {
+  font-family: "Montserrat", sans-serif;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+h1 {
+  font-size: 28px;
+}
+
+h1#pageTitle {
+  font-size: 29px;
+}
+
+h2 {
+  font-size: 23px;
+}
+
+.welcome h2 {
+  font-size: 27px;
+}
+
+.toolbar h2,
+.modalhead h2 {
+  font-size: 22px;
+}
+
+h3 {
+  font-size: 16px;
+}
+
+.panelhead h3,
+.user-panel h3 {
+  font-size: 15px;
+}
+
+.branchcard h3 {
+  font-size: 14px;
+}
+
+.brand b {
+  font-size: 19px;
+}
+
+.nav span {
+  font-size: 16px;
+}
+
+.primary,
+.outline,
+.textbtn {
+  font-size: 12px;
+}
+
+.stat strong {
+  font-size: 26px;
+}
+
+.branchcard strong {
+  font-size: 25px;
+}
+
+.stathead {
+  font-size: 10px;
+}
+
+.stat small,
+.panelhead p,
+.toolbar p,
+td {
+  font-size: 12px;
+}
+
+.filters input,
+.filters select,
+.formgrid input,
+.formgrid select {
+  font-size: 12px;
+}
+
+.formgrid label {
+  font-size: 11px;
+}
+
+.tablewrap th {
+  font-size: 10px;
+}
+
+.month small {
+  font-size: 10px;
+}
+
+.eyebrow,
+.navlabel {
+  font-size: 11px;
+}
+
+.auth-card .brandmark {
+  font-family: "Montserrat", sans-serif;
+  font-weight: 800;
+}

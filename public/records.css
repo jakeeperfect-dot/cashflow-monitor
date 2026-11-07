@@ -1,0 +1,35 @@
+.record-actions {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 9px;
+  margin: -3px 0 14px;
+}
+
+.record-actions label {
+  display: grid;
+  gap: 4px;
+  color: #777b84;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.record-actions input {
+  min-width: 175px;
+  padding: 9px 11px;
+  border: 1px solid #e6e6e9;
+  border-radius: 7px;
+  background: #fff;
+  font: inherit;
+  font-size: 11px;
+}
+
+@media (max-width: 720px) {
+  .record-actions {
+    align-items: stretch;
+  }
+
+  .record-actions label {
+    flex-basis: 100%;
+  }
+}

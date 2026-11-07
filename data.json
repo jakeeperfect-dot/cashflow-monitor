@@ -1,0 +1,44 @@
+{
+  "branches": [
+    "Kapatagan Main",
+    "Gensan Branch (Osmeña)"
+  ],
+  "transactions": [],
+  "users": [
+    {
+      "id": "0161da9e-78ac-4dd5-a621-563f78fd1847",
+      "username": "jestony",
+      "role": "Admin",
+      "branch": null,
+      "passwordHash": "3b83f0b6c99cc833636372112a2f62c1:8c188dba829d9fe3334fa8e80afedb714788c5940b3dbc0a92d11c56cb3d8980c5159a5dbd380aff16809d3a1ae6e27380f49d3fd6b48da1fa576df2336708f4"
+    },
+    {
+      "id": "d5ed057a-a718-4a7e-970d-ac2dd1e5d415",
+      "username": "kd_jhoi",
+      "role": "Accountant",
+      "branch": null,
+      "passwordHash": "6f63db370ce9f7afb6f2e2e4158549f3:6d62df3dd3e1755aa8f39cd2e2735caad824d688e1b226ec6e7a93c4b230a7b6691d4ad80764a35bf9ead68573c177ea196b14ea8127260ff513e74a4b1ebfa2"
+    },
+    {
+      "id": "ec37f4a2-0316-4978-ad04-432bcdf8d005",
+      "username": "heraldo",
+      "role": "Admin",
+      "branch": null,
+      "passwordHash": "b4b052796c1f893cfff9d3454b31366d:2c132c2b66b942c4ee58572938c4bda5f2b0afc07ecd9f54f5e9242905da151d79f0993613b3ce6ccedc6d86c43e912359e9c2f3920d07768d4aad99ada0793f"
+    },
+    {
+      "id": "c211236e-0c0c-4f9e-bc17-aeeb8a541cdb",
+      "username": "kd_renice",
+      "role": "Accountant",
+      "branch": null,
+      "passwordHash": "9dbb2f6c0f7014ea345461171b94a8b0:fb9e0cd642991b02da5b5a337bf53aad8a7758fc2e75576322895c2ef5779c53c167d8d698a66df8ee4d1daab6ffb5d8c204d829fbf738097386de9d22d1d918"
+    },
+    {
+      "id": "ecd21480-e887-4c68-bc95-504ad6110306",
+      "username": "kd_joemel",
+      "role": "Branch Manager",
+      "branch": "Gensan Branch (Osmeña)",
+      "passwordHash": "766c82cb6717c191f7b5ea79c0c22ce8:e66de2bbd5b14cdc5cd448e9417f2cf4f27a3ffc6a2fd30a3b9982929d69b55d9484f7397cf5a080b316b3c246577b44d2f917dc828d99721bedad4a68c748f9"
+    }
+  ]
+}
