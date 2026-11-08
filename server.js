@@ -13,11 +13,11 @@ const HOST = process.env.HOST || '127.0.0.1';
 const SESSION_COOKIE = 'kdcashflow_session';
 const SESSION_TTL = 8 * 60 * 60 * 1000;
 const PASSWORD_MIN_LENGTH = 12;
-const ROLES = new Set(['Admin', 'Accountant', 'Branch Manager']);
+const ROLES = new Set(['SuperAdmin', 'Admin', 'Accountant', 'Branch Manager']);
 const scrypt = promisify(crypto.scrypt);
 const sessions = new Map();
 const loginAttempts = new Map();
-const initial = { branches: ['Kapatagan Main'], transactions: [], users: [] };
+const initial = { branches: ['Kapatagan Main'], transactions: [], users: [], transactionEditRequests: [], transactionHistory: [] };
 
 function read() {
   try {
@@ -26,6 +26,42 @@ function read() {
       throw new Error('Invalid data.json structure.');
     }
     data.users = Array.isArray(data.users) ? data.users : [];
+    data.transactionEditRequests = Array.isArray(data.transactionEditRequests) ? data.transactionEditRequests : [];
+    if (!Array.isArray(data.transactionHistory)) {
+      data.transactionHistory = data.transactionEditRequests.flatMap(request => {
+        if (!request.id || !request.requestedAt || !request.requesterName) return [];
+        const requester = data.users.find(account => account.id === request.requestedBy);
+        const branch = request.original?.branch || request.changes?.branch || null;
+        const entries = [{
+          id: `legacy-request-${request.id}`,
+          timestamp: request.requestedAt,
+          actor: request.requesterName,
+          actorRole: requester?.role || 'Unknown',
+          transactionId: request.transactionId,
+          branch,
+          action: 'Edit requested',
+          before: request.original,
+          after: request.changes,
+          requestId: request.id,
+        }];
+        if (['Approved', 'Rejected'].includes(request.status) && request.reviewedAt && request.reviewedBy) {
+          const reviewer = data.users.find(account => account.username === request.reviewedBy);
+          entries.push({
+            id: `legacy-review-${request.id}`,
+            timestamp: request.reviewedAt,
+            actor: request.reviewedBy,
+            actorRole: reviewer?.role || 'Unknown',
+            transactionId: request.transactionId,
+            branch,
+            action: `Edit ${request.status.toLowerCase()}`,
+            before: request.original,
+            after: request.changes,
+            requestedBy: request.requesterName,
+          });
+        }
+        return entries;
+      });
+    }
     return data;
   } catch (error) {
     if (error.code === 'ENOENT') return structuredClone(initial);
@@ -37,6 +73,16 @@ function write(data) {
   const temporary = `${DATA}.${process.pid}.tmp`;
   fs.writeFileSync(temporary, JSON.stringify(data, null, 2), { mode: 0o600 });
   fs.renameSync(temporary, DATA);
+}
+
+function recordTransactionHistory(data, user, entry) {
+  data.transactionHistory.push({
+    id: crypto.randomUUID(),
+    timestamp: new Date().toISOString(),
+    actor: user.username,
+    actorRole: user.role,
+    ...entry,
+  });
 }
 
 function send(res, status, body, extraHeaders = {}) {
@@ -87,11 +133,19 @@ function authenticate(req, res, db) {
 }
 
 function isAdmin(user) {
-  return user.role === 'Admin';
+  return user.role === 'Admin' || isSuperAdmin(user);
+}
+
+function isSuperAdmin(user) {
+  return user.role === 'SuperAdmin';
 }
 
 function canCreateTransactions(user) {
-  return user.role === 'Admin' || user.role === 'Accountant' || user.role === 'Branch Manager';
+  return isAdmin(user) || user.role === 'Accountant' || user.role === 'Branch Manager';
+}
+
+function canEditTransactions(user) {
+  return isAdmin(user) || user.role === 'Accountant' || user.role === 'Branch Manager';
 }
 
 function validOrigin(req) {
@@ -208,8 +262,8 @@ async function handleApi(req, res, url) {
     return send(res, 200, { setupRequired: db.users.length === 0 });
   }
 
-  if ((method === 'POST' && ['/api/setup', '/api/login', '/api/logout', '/api/users', '/api/transactions', '/api/branches'].includes(pathname)
-      || method === 'PATCH' && pathname.startsWith('/api/transactions/'))
+  if ((method === 'POST' && ['/api/setup', '/api/login', '/api/logout', '/api/change-password', '/api/users', '/api/transactions', '/api/branches'].includes(pathname)
+      || method === 'PATCH' && (pathname.startsWith('/api/transactions/') || pathname.startsWith('/api/transaction-edit-requests/')))
       || method === 'DELETE' && (pathname === '/api/transactions' || pathname.startsWith('/api/transactions/') || pathname === '/api/branches' || pathname.startsWith('/api/users/'))) {
     if (!validOrigin(req)) return send(res, 403, { error: 'Request origin is not allowed.' });
     if (req.headers['content-type']?.toLowerCase().split(';')[0].trim() !== 'application/json') {
@@ -225,7 +279,7 @@ async function handleApi(req, res, url) {
       return send(res, 400, { error: `Password must be at least ${PASSWORD_MIN_LENGTH} characters.` });
     }
     if (input.password.length > 128) return send(res, 400, { error: 'Password must be 128 characters or fewer.' });
-    const user = { id: crypto.randomUUID(), username: input.username.toLowerCase(), role: 'Admin', branch: null, passwordHash: await makePasswordHash(input.password) };
+    const user = { id: crypto.randomUUID(), username: input.username.toLowerCase(), role: 'SuperAdmin', branch: null, passwordHash: await makePasswordHash(input.password) };
     if (read().users.length) return send(res, 409, { error: 'Initial setup is already complete.' });
     db.users.push(user);
     write(db);
@@ -265,6 +319,31 @@ async function handleApi(req, res, url) {
 
   if (pathname === '/api/session' && method === 'GET') return send(res, 200, { user: publicUser(user) });
 
+  if (pathname === '/api/change-password' && method === 'POST') {
+    const input = await readJson(req);
+    if (typeof input.currentPassword !== 'string' || input.currentPassword.length > 128) {
+      return send(res, 400, { error: 'Enter your current password.' });
+    }
+    if (typeof input.newPassword !== 'string' || input.newPassword.length < PASSWORD_MIN_LENGTH) {
+      return send(res, 400, { error: `New password must be at least ${PASSWORD_MIN_LENGTH} characters.` });
+    }
+    if (input.newPassword.length > 128) return send(res, 400, { error: 'New password must be 128 characters or fewer.' });
+
+    const latest = read();
+    const account = latest.users.find(existing => existing.id === user.id);
+    if (!account || !(await verifyPassword(input.currentPassword, account.passwordHash))) {
+      return send(res, 401, { error: 'Current password is incorrect.' });
+    }
+    account.passwordHash = await makePasswordHash(input.newPassword);
+    write(latest);
+
+    const currentToken = parseCookies(req.headers.cookie)[SESSION_COOKIE];
+    for (const [token, session] of sessions) {
+      if (session.userId === account.id && token !== currentToken) sessions.delete(token);
+    }
+    return send(res, 200, { ok: true });
+  }
+
   if (pathname === '/api/data' && method === 'GET') {
     const branches = user.role === 'Branch Manager' ? [user.branch] : db.branches;
     const transactions = user.role === 'Branch Manager'
@@ -273,9 +352,70 @@ async function handleApi(req, res, url) {
     return send(res, 200, { branches, transactions });
   }
 
+  if (pathname === '/api/transaction-edit-requests' && method === 'GET') {
+    const requests = isAdmin(user)
+      ? db.transactionEditRequests.filter(request => request.status === 'Pending')
+      : db.transactionEditRequests.filter(request => request.requestedBy === user.id && request.status === 'Pending');
+    return send(res, 200, { requests });
+  }
+
+  if (pathname === '/api/transaction-history' && method === 'GET') {
+    const history = user.role === 'Branch Manager'
+      ? db.transactionHistory.filter(entry => entry.branch === user.branch
+        || entry.before?.branch === user.branch
+        || entry.after?.branch === user.branch)
+      : db.transactionHistory;
+    return send(res, 200, { history: history.slice().reverse() });
+  }
+
+  if (pathname.startsWith('/api/transaction-edit-requests/') && method === 'PATCH') {
+    if (!isAdmin(user)) return send(res, 403, { error: 'Only Admins can review transaction edit requests.' });
+    const id = decodeURIComponent(pathname.slice('/api/transaction-edit-requests/'.length));
+    const input = await readJson(req);
+    if (!['approve', 'reject'].includes(input.action)) return send(res, 400, { error: 'Choose approve or reject.' });
+    const latest = read();
+    const editRequest = latest.transactionEditRequests.find(request => request.id === id);
+    if (!editRequest) return send(res, 404, { error: 'Edit request not found.' });
+    if (editRequest.status !== 'Pending') return send(res, 409, { error: 'This edit request has already been reviewed.' });
+
+    if (input.action === 'approve') {
+      const transaction = latest.transactions.find(item => item.id === editRequest.transactionId);
+      if (!transaction) return send(res, 409, { error: 'The transaction no longer exists. Reject this request instead.' });
+      if ((transaction.updatedAt || transaction.createdAt || null) !== editRequest.baseUpdatedAt) {
+        return send(res, 409, { error: 'The transaction changed after this request was submitted. Reject this stale request.' });
+      }
+      Object.assign(transaction, editRequest.changes, { updatedAt: new Date().toISOString() });
+      editRequest.status = 'Approved';
+      recordTransactionHistory(latest, user, {
+        transactionId: editRequest.transactionId,
+        branch: transaction.branch,
+        action: 'Edit approved',
+        before: editRequest.original,
+        after: editRequest.changes,
+        requestedBy: editRequest.requesterName,
+      });
+    } else {
+      editRequest.status = 'Rejected';
+      recordTransactionHistory(latest, user, {
+        transactionId: editRequest.transactionId,
+        branch: editRequest.original.branch,
+        action: 'Edit rejected',
+        before: editRequest.original,
+        after: editRequest.changes,
+        requestedBy: editRequest.requesterName,
+      });
+    }
+    editRequest.reviewedAt = new Date().toISOString();
+    editRequest.reviewedBy = user.username;
+    write(latest);
+    return send(res, 200, { request: editRequest });
+  }
+
   if (pathname === '/api/users' && method === 'GET') {
-    if (!isAdmin(user)) return send(res, 403, { error: 'Only Admins can manage users.' });
-    return send(res, 200, { users: db.users.map(publicUser) });
+    const visibleUsers = isSuperAdmin(user)
+      ? db.users
+      : db.users.filter(account => account.role !== 'SuperAdmin');
+    return send(res, 200, { users: visibleUsers.map(publicUser) });
   }
 
   if (pathname === '/api/users' && method === 'POST') {
@@ -288,6 +428,7 @@ async function handleApi(req, res, url) {
     }
     if (input.password.length > 128) return send(res, 400, { error: 'Password must be 128 characters or fewer.' });
     if (!ROLES.has(input.role)) return send(res, 400, { error: 'Choose a valid role.' });
+    if (input.role === 'SuperAdmin' && !isSuperAdmin(user)) return send(res, 403, { error: 'Only SuperAdmins can create SuperAdmin accounts.' });
     if (db.users.some(account => account.username === username)) return send(res, 409, { error: 'That username already exists.' });
     const branch = input.role === 'Branch Manager' ? input.branch : null;
     if (input.role === 'Branch Manager' && !db.branches.includes(branch)) return send(res, 400, { error: 'Choose an active branch for this Branch Manager.' });
@@ -311,7 +452,9 @@ async function handleApi(req, res, url) {
     const id = decodeURIComponent(pathname.slice('/api/users/'.length));
     const account = db.users.find(existing => existing.id === id);
     if (!account) return send(res, 404, { error: 'User not found.' });
-    if (account.role === 'Admin') return send(res, 403, { error: 'Admin accounts cannot be deleted here.' });
+    if (account.role === 'SuperAdmin' || account.role === 'Admin' && !isSuperAdmin(user)) {
+      return send(res, 403, { error: 'You cannot delete this account.' });
+    }
     db.users = db.users.filter(existing => existing.id !== id);
     for (const [token, session] of sessions) {
       if (session.userId === id) sessions.delete(token);
@@ -329,12 +472,19 @@ async function handleApi(req, res, url) {
   }
 
   if (pathname === '/api/transactions' && method === 'DELETE') {
-    if (!isAdmin(user)) return send(res, 403, { error: 'Only Admins can reset transaction data.' });
+    if (!isSuperAdmin(user)) return send(res, 403, { error: 'Only SuperAdmins can reset transaction data.' });
     const latest = read();
     const deletedCount = latest.transactions.length;
+    for (const editRequest of latest.transactionEditRequests.filter(request => request.status === 'Pending')) {
+      editRequest.status = 'Rejected';
+      editRequest.reviewedAt = new Date().toISOString();
+      editRequest.reviewedBy = user.username;
+    }
+    const historyDeletedCount = latest.transactionHistory.length;
     latest.transactions = [];
+    latest.transactionHistory = [];
     write(latest);
-    return send(res, 200, { ok: true, deletedCount });
+    return send(res, 200, { ok: true, deletedCount, historyDeletedCount });
   }
 
   if (pathname === '/api/transactions' && method === 'POST') {
@@ -360,35 +510,62 @@ async function handleApi(req, res, url) {
       createdAt: new Date().toISOString(),
     };
     latest.transactions.unshift(transaction);
+    recordTransactionHistory(latest, user, {
+      transactionId: transaction.id,
+      branch: transaction.branch,
+      action: 'Created',
+      after: transaction,
+    });
     write(latest);
     return send(res, 201, transaction);
   }
 
   if (pathname.startsWith('/api/transactions/') && method === 'DELETE') {
-    if (!isAdmin(user)) return send(res, 403, { error: 'Only Admins can delete transactions.' });
+    if (!isSuperAdmin(user)) return send(res, 403, { error: 'Only SuperAdmins can delete transactions.' });
     const id = decodeURIComponent(pathname.slice('/api/transactions/'.length));
     const index = db.transactions.findIndex(transaction => transaction.id === id);
     if (index < 0) return send(res, 404, { error: 'Transaction not found.' });
-    db.transactions.splice(index, 1);
+    const [transaction] = db.transactions.splice(index, 1);
+    recordTransactionHistory(db, user, {
+      transactionId: transaction.id,
+      branch: transaction.branch,
+      action: 'Deleted',
+      before: transaction,
+    });
+    for (const editRequest of db.transactionEditRequests.filter(request => request.transactionId === id && request.status === 'Pending')) {
+      editRequest.status = 'Rejected';
+      editRequest.reviewedAt = new Date().toISOString();
+      editRequest.reviewedBy = user.username;
+      recordTransactionHistory(db, user, {
+        transactionId: id,
+        branch: transaction.branch,
+        action: 'Edit request invalidated by transaction deletion',
+        before: editRequest.original,
+        after: editRequest.changes,
+        requestedBy: editRequest.requesterName,
+      });
+    }
     write(db);
     return send(res, 200, { ok: true });
   }
 
   if (pathname.startsWith('/api/transactions/') && method === 'PATCH') {
-    if (!isAdmin(user)) return send(res, 403, { error: 'Only Admins can edit transactions.' });
+    if (!canEditTransactions(user)) return send(res, 403, { error: 'You do not have permission to edit transactions.' });
     const id = decodeURIComponent(pathname.slice('/api/transactions/'.length));
     const index = db.transactions.findIndex(transaction => transaction.id === id);
     if (index < 0) return send(res, 404, { error: 'Transaction not found.' });
     const input = await readJson(req);
     const existing = db.transactions[index];
+    if (user.role === 'Branch Manager' && (existing.branch !== user.branch || input.branch !== user.branch)) {
+      return send(res, 403, { error: 'You can only edit transactions for your assigned branch.' });
+    }
     if (!['in', 'out'].includes(input.type) || typeof input.branch !== 'string'
         || (!db.branches.includes(input.branch) && input.branch !== existing.branch)
         || typeof input.category !== 'string' || !input.category.trim()
         || !Number.isFinite(Number(input.amount)) || !(Number(input.amount) > 0) || !validDate(input.date)) {
       return send(res, 400, { error: 'Please complete all required fields and enter a valid amount and date.' });
     }
-    db.transactions[index] = {
-      ...existing,
+    const changes = {
       type: input.type,
       branch: input.branch,
       date: input.date,
@@ -396,14 +573,54 @@ async function handleApi(req, res, url) {
       amount: Number(input.amount),
       reference: String(input.reference || '').slice(0, 200),
       notes: String(input.notes || '').slice(0, 1000),
-      updatedAt: new Date().toISOString(),
     };
+    if (!isAdmin(user)) {
+      const latest = read();
+      const current = latest.transactions.find(transaction => transaction.id === id);
+      if (!current) return send(res, 404, { error: 'Transaction not found.' });
+      if (user.role === 'Branch Manager' && current.branch !== user.branch) {
+        return send(res, 403, { error: 'You can only edit transactions for your assigned branch.' });
+      }
+      if (latest.transactionEditRequests.some(request => request.transactionId === id && request.status === 'Pending')) {
+        return send(res, 409, { error: 'This transaction already has a pending edit request.' });
+      }
+      const editRequest = {
+        id: crypto.randomUUID(),
+        transactionId: id,
+        requestedBy: user.id,
+        requesterName: user.username,
+        status: 'Pending',
+        baseUpdatedAt: current.updatedAt || current.createdAt || null,
+        original: Object.fromEntries(Object.keys(changes).map(key => [key, current[key] ?? ''])),
+        changes,
+        requestedAt: new Date().toISOString(),
+      };
+      latest.transactionEditRequests.push(editRequest);
+      recordTransactionHistory(latest, user, {
+        transactionId: id,
+        branch: current.branch,
+        action: 'Edit requested',
+        before: editRequest.original,
+        after: changes,
+        requestId: editRequest.id,
+      });
+      write(latest);
+      return send(res, 202, { request: editRequest });
+    }
+    db.transactions[index] = { ...existing, ...changes, updatedAt: new Date().toISOString() };
+    recordTransactionHistory(db, user, {
+      transactionId: id,
+      branch: db.transactions[index].branch,
+      action: 'Edited',
+      before: existing,
+      after: db.transactions[index],
+    });
     write(db);
     return send(res, 200, db.transactions[index]);
   }
 
   if (pathname === '/api/branches' && method === 'POST') {
-    if (!isAdmin(user)) return send(res, 403, { error: 'Only Admins can add branches.' });
+    if (!isAdmin(user) && user.role !== 'Accountant') return send(res, 403, { error: 'Only Admins and Accountants can add branches.' });
     const input = await readJson(req);
     const name = typeof input.name === 'string' ? input.name.trim() : '';
     if (!name || name.length > 80) return send(res, 400, { error: 'Branch name must be between 1 and 80 characters.' });

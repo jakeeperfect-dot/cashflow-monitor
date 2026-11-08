@@ -8,7 +8,7 @@
     {
       "id": "0161da9e-78ac-4dd5-a621-563f78fd1847",
       "username": "jestony",
-      "role": "Admin",
+      "role": "SuperAdmin",
       "branch": null,
       "passwordHash": "3b83f0b6c99cc833636372112a2f62c1:8c188dba829d9fe3334fa8e80afedb714788c5940b3dbc0a92d11c56cb3d8980c5159a5dbd380aff16809d3a1ae6e27380f49d3fd6b48da1fa576df2336708f4"
     },
@@ -40,5 +40,95 @@
       "branch": "Gensan Branch (Osmeña)",
       "passwordHash": "766c82cb6717c191f7b5ea79c0c22ce8:e66de2bbd5b14cdc5cd448e9417f2cf4f27a3ffc6a2fd30a3b9982929d69b55d9484f7397cf5a080b316b3c246577b44d2f917dc828d99721bedad4a68c748f9"
     }
-  ]
+  ],
+  "transactionEditRequests": [
+    {
+      "id": "8dce386c-f45a-449e-8ec2-1e9f561d0628",
+      "transactionId": "2115bd4c-6619-407e-898f-38d16a7cd99c",
+      "requestedBy": "d5ed057a-a718-4a7e-970d-ac2dd1e5d415",
+      "requesterName": "kd_jhoi",
+      "status": "Approved",
+      "baseUpdatedAt": "2026-11-08T06:01:42.960Z",
+      "original": {
+        "type": "in",
+        "branch": "Kapatagan Main",
+        "date": "2026-11-07",
+        "category": "Sales collection",
+        "amount": 8000,
+        "reference": "",
+        "notes": "Actual Cash is short"
+      },
+      "changes": {
+        "type": "in",
+        "branch": "Kapatagan Main",
+        "date": "2026-11-07",
+        "category": "Sales collection",
+        "amount": 7000,
+        "reference": "",
+        "notes": "Actual Cash is short"
+      },
+      "requestedAt": "2026-11-08T06:02:04.178Z",
+      "reviewedAt": "2026-11-08T06:04:59.464Z",
+      "reviewedBy": "heraldo"
+    },
+    {
+      "id": "3574cd82-4d34-4516-a68b-d3aa798621e9",
+      "transactionId": "2115bd4c-6619-407e-898f-38d16a7cd99c",
+      "requestedBy": "d5ed057a-a718-4a7e-970d-ac2dd1e5d415",
+      "requesterName": "kd_jhoi",
+      "status": "Approved",
+      "baseUpdatedAt": "2026-11-08T06:06:53.127Z",
+      "original": {
+        "type": "in",
+        "branch": "Kapatagan Main",
+        "date": "2026-11-07",
+        "category": "Sales collection",
+        "amount": 6000,
+        "reference": "",
+        "notes": "Actual Cash is short"
+      },
+      "changes": {
+        "type": "in",
+        "branch": "Kapatagan Main",
+        "date": "2026-11-07",
+        "category": "Sales collection",
+        "amount": 7000,
+        "reference": "",
+        "notes": "Actual Cash is short"
+      },
+      "requestedAt": "2026-11-08T06:07:57.304Z",
+      "reviewedAt": "2026-11-08T06:11:18.832Z",
+      "reviewedBy": "heraldo"
+    },
+    {
+      "id": "c42493b9-4bd2-4926-a575-cd02a23f3f55",
+      "transactionId": "2344efb9-e74a-4938-b12c-788620d0c4db",
+      "requestedBy": "d5ed057a-a718-4a7e-970d-ac2dd1e5d415",
+      "requesterName": "kd_jhoi",
+      "status": "Approved",
+      "baseUpdatedAt": "2026-11-08T06:46:19.311Z",
+      "original": {
+        "type": "in",
+        "branch": "Kapatagan Main",
+        "date": "2026-11-07",
+        "category": "Sales collection",
+        "amount": 5000,
+        "reference": "",
+        "notes": "complete actual cash"
+      },
+      "changes": {
+        "type": "in",
+        "branch": "Kapatagan Main",
+        "date": "2026-11-07",
+        "category": "Sales collection",
+        "amount": 4000,
+        "reference": "",
+        "notes": "complete actual cash"
+      },
+      "requestedAt": "2026-11-08T06:46:52.432Z",
+      "reviewedAt": "2026-11-08T06:47:46.864Z",
+      "reviewedBy": "heraldo"
+    }
+  ],
+  "transactionHistory": []
 }

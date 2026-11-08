@@ -3,6 +3,10 @@
 let db = { branches: [], transactions: [] };
 let currentUser = null;
 let editingTransactionId = null;
+let transactionEditRequests = [];
+let transactionHistory = [];
+let pendingEditRequestIds = null;
+let notificationPollTimer = null;
 const $ = id => document.getElementById(id);
 const peso = value => '₱' + Number(value || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const today = () => new Date().toISOString().slice(0, 10);
@@ -10,7 +14,8 @@ const sum = (items, type) => items.filter(item => !type || item.type === type).r
 const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, character => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
 }[character]));
-const isAdmin = () => currentUser?.role === 'Admin';
+const isSuperAdmin = () => currentUser?.role === 'SuperAdmin';
+const isAdmin = () => currentUser?.role === 'Admin' || isSuperAdmin();
 const canCreateTransactions = () => isAdmin() || currentUser?.role === 'Accountant' || currentUser?.role === 'Branch Manager';
 
 async function api(url, options = {}) {
@@ -22,11 +27,128 @@ async function api(url, options = {}) {
   if (!response.ok) throw new Error(data.error || 'Request failed.');
   return data;
 }
-
 function toast(message) {
   $('toast').textContent = message;
   $('toast').classList.add('show');
   setTimeout(() => $('toast').classList.remove('show'), 2600);
+}
+
+function renderEditRequests() {
+  const panel = $('editRequestsPanel');
+  if (!panel) return;
+  panel.classList.toggle('hidden', transactionEditRequests.length === 0);
+  $('editRequestsList').innerHTML = transactionEditRequests.length
+    ? transactionEditRequests.slice().reverse().map(request => {
+      const fields = [
+        ['type', 'Type'], ['branch', 'Branch'], ['date', 'Date'],
+        ['category', 'Category'], ['amount', 'Amount'], ['reference', 'Reference'], ['notes', 'Notes'],
+      ];
+      const changes = fields
+        .filter(([key]) => request.original[key] !== request.changes[key])
+        .map(([key, label]) => `<div class="edit-request-change"><b>${label}:</b> ${escapeHtml(request.original[key] || '—')} → <strong>${escapeHtml(request.changes[key] || '—')}</strong></div>`)
+        .join('');
+      const actions = isAdmin() && request.status === 'Pending'
+        ? `<div class="edit-request-actions"><button class="primary" data-review-edit="${escapeHtml(request.id)}" data-action="approve">Approve</button><button class="danger-button" data-review-edit="${escapeHtml(request.id)}" data-action="reject">Reject</button></div>`
+        : '';
+      return `<article class="edit-request"><div class="edit-request-head"><div><strong>${escapeHtml(request.requesterName)}</strong><small> requested an edit · ${escapeHtml(new Date(request.requestedAt).toLocaleString())}</small></div><span class="edit-request-status ${request.status.toLowerCase()}">${escapeHtml(request.status)}</span></div><div class="edit-request-changes">${changes || '<span>No field changes.</span>'}</div><div class="edit-request-foot"><span>Transaction ${escapeHtml(request.transactionId)}</span>${request.reviewedBy ? `<span>${escapeHtml(request.status)} by ${escapeHtml(request.reviewedBy)}</span>` : ''}</div>${actions}</article>`;
+    }).join('')
+    : '<div class="empty">No pending transaction edit requests.</div>';
+}
+
+function renderEditNotifications() {
+  const button = $('notificationBell');
+  const menu = $('notificationMenu');
+  if (!button || !menu) return;
+  const count = transactionEditRequests.length;
+  button.setAttribute('aria-label', `${count} pending transaction edit request${count === 1 ? '' : 's'}`);
+  $('notificationCount').textContent = count > 99 ? '99+' : String(count);
+  $('notificationCount').classList.toggle('hidden', count === 0);
+  menu.innerHTML = count
+    ? `<div class="notification-menu-head"><strong>Pending edit approvals</strong><span>${count}</span></div>${transactionEditRequests.slice().reverse().map(request => `<button class="notification-item" data-open-edit-request="${escapeHtml(request.id)}"><span class="notification-item-title">${escapeHtml(request.requesterName)} requested an edit</span><span class="notification-item-meta">Transaction ${escapeHtml(request.transactionId)}${request.original?.branch ? ` · ${escapeHtml(request.original.branch)}` : ''}</span><small>${escapeHtml(new Date(request.requestedAt).toLocaleString())} · Review request</small></button>`).join('')}`
+    : '<div class="notification-empty"><strong>No pending edit requests</strong><span>New requests will appear here.</span></div>';
+}
+
+function syncEditRequests(requests, announceNew = false) {
+  const newRequests = announceNew && pendingEditRequestIds
+    ? requests.filter(request => !pendingEditRequestIds.has(request.id))
+    : [];
+  pendingEditRequestIds = new Set(requests.map(request => request.id));
+  transactionEditRequests = requests;
+  renderEditRequests();
+  renderEditNotifications();
+  if (newRequests.length === 1) {
+    const request = newRequests[0];
+    toast(`${request.requesterName} requested an edit for transaction ${request.transactionId}.`);
+  } else if (newRequests.length > 1) {
+    toast(`${newRequests.length} new transaction edit requests need review.`);
+  }
+}
+
+function configureNotificationBell() {
+  if (!isAdmin() || $('notificationBell')) return;
+  const wrapper = document.createElement('div');
+  wrapper.id = 'notificationWrap';
+  wrapper.className = 'notification-wrap';
+  wrapper.innerHTML = '<button type="button" class="notification-bell" id="notificationBell" aria-label="0 pending transaction edit requests" aria-expanded="false" aria-controls="notificationMenu" title="Pending edit requests"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"></path><path d="M10 21h4"></path></svg><span class="notification-count hidden" id="notificationCount"></span></button><div class="notification-menu hidden" id="notificationMenu" role="region" aria-label="Pending transaction edit requests"></div>';
+  $('quickAdd').before(wrapper);
+  const button = $('notificationBell');
+  const menu = $('notificationMenu');
+  button.onclick = () => {
+    const isOpen = menu.classList.toggle('hidden');
+    button.setAttribute('aria-expanded', String(!isOpen));
+  };
+  menu.onclick = event => {
+    if (!event.target.closest('[data-open-edit-request]')) return;
+    menu.classList.add('hidden');
+    button.setAttribute('aria-expanded', 'false');
+    pageTo('transactions');
+    const panel = $('editRequestsPanel');
+    panel?.classList.remove('hidden');
+    panel?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+  document.addEventListener('click', event => {
+    if (wrapper.contains(event.target)) return;
+    menu.classList.add('hidden');
+    button.setAttribute('aria-expanded', 'false');
+  });
+  document.addEventListener('keydown', event => {
+    if (event.key !== 'Escape') return;
+    menu.classList.add('hidden');
+    button.setAttribute('aria-expanded', 'false');
+  });
+  renderEditNotifications();
+}
+
+function startNotificationPolling() {
+  if (!isAdmin() || notificationPollTimer) return;
+  notificationPollTimer = setInterval(async () => {
+    if (document.hidden) return;
+    try {
+      const result = await api('/api/transaction-edit-requests');
+      syncEditRequests(result.requests, true);
+    } catch {}
+  }, 15000);
+}
+
+function renderTransactionHistory() {
+  const list = $('transactionHistoryList');
+  if (!list) return;
+  list.innerHTML = transactionHistory.length
+    ? transactionHistory.map(entry => {
+      const fields = ['type', 'branch', 'date', 'category', 'amount', 'reference', 'notes'];
+      const before = entry.before || {};
+      const after = entry.after || {};
+      const changes = fields
+        .filter(field => before[field] !== undefined || after[field] !== undefined)
+        .filter(field => before[field] !== after[field])
+        .map(field => `<div><b>${escapeHtml(field[0].toUpperCase() + field.slice(1))}:</b> ${escapeHtml(before[field] ?? '—')} → ${escapeHtml(after[field] ?? '—')}</div>`)
+        .join('');
+      const details = entry.details
+        ? `<div class="history-details">Deleted transactions: ${escapeHtml(entry.details.deletedCount)}</div>`
+        : '';
+      return `<article class="history-entry"><div class="history-entry-head"><div><strong>${escapeHtml(entry.action)}</strong><small>${escapeHtml(new Date(entry.timestamp).toLocaleString())}</small></div><span class="history-actor">${escapeHtml(entry.actor)} · ${escapeHtml(entry.actorRole)}</span></div><div class="history-entry-meta">${entry.transactionId ? `Transaction ${escapeHtml(entry.transactionId)}` : 'System action'}${entry.branch ? ` · ${escapeHtml(entry.branch)}` : ''}${entry.requestedBy ? ` · Requested by ${escapeHtml(entry.requestedBy)}` : ''}</div>${changes ? `<div class="history-changes">${changes}</div>` : ''}${details}</article>`;
+    }).join('')
+    : '<div class="empty">No transaction history yet. New transaction activity will be recorded here.</div>';
 }
 
 function showAuth(setupRequired) {
@@ -40,7 +162,7 @@ function showAuth(setupRequired) {
     document.body.prepend(shell);
   }
   shell.innerHTML = setupRequired
-    ? `<form id="setupForm" class="auth-card"><div class="brandmark">KD</div><div class="eyebrow">SECURE ACCOUNT SETUP</div><h1>Create administrator</h1><p>Create the first Admin account to secure this cash monitoring system.</p><label>Username<input name="username" autocomplete="username" minlength="3" maxlength="32" required></label><label>Password<input name="password" type="password" autocomplete="new-password" minlength="12" required><small>Use at least 12 characters.</small></label><label>Confirm password<input name="confirmPassword" type="password" autocomplete="new-password" minlength="12" required></label><button class="primary" type="submit">Create Admin account</button><div class="auth-error" id="authError"></div></form>`
+    ? `<form id="setupForm" class="auth-card"><div class="brandmark">KD</div><div class="eyebrow">SECURE ACCOUNT SETUP</div><h1>Create SuperAdmin</h1><p>Create the first SuperAdmin account to secure this cash monitoring system.</p><label>Username<input name="username" autocomplete="username" minlength="3" maxlength="32" required></label><label>Password<input name="password" type="password" autocomplete="new-password" minlength="12" required><small>Use at least 12 characters.</small></label><label>Confirm password<input name="confirmPassword" type="password" autocomplete="new-password" minlength="12" required></label><button class="primary" type="submit">Create SuperAdmin account</button><div class="auth-error" id="authError"></div></form>`
     : `<form id="loginForm" class="auth-card"><div class="brandmark">KD</div><div class="eyebrow">KREME DONUTS · FINANCE</div><h1>Sign in</h1><p>Sign in to access cash monitoring.</p><label>Username<input name="username" autocomplete="username" required autofocus></label><label>Password<input name="password" type="password" autocomplete="current-password" required></label><button class="primary" type="submit">Sign in</button><div class="auth-error" id="authError"></div></form>`;
   const form = $(setupRequired ? 'setupForm' : 'loginForm');
   form.onsubmit = async event => {
@@ -63,6 +185,10 @@ function showAuth(setupRequired) {
   };
 }
 
+function canEditTransactions() {
+  return isAdmin() || currentUser?.role === 'Accountant' || currentUser?.role === 'Branch Manager';
+}
+
 async function enterApp(user) {
   currentUser = user;
   $('authShell')?.remove();
@@ -70,6 +196,7 @@ async function enterApp(user) {
   document.querySelector('.main').classList.remove('hidden');
   configureRoleUi();
   await load();
+  startNotificationPolling();
 }
 
 function configureRoleUi() {
@@ -96,9 +223,10 @@ function configureRoleUi() {
     }
   };
   $('quickAdd').classList.toggle('hidden', !canCreateTransactions());
-  $('addBranch').classList.toggle('hidden', !isAdmin());
+  configureNotificationBell();
+  $('addBranch').classList.toggle('hidden', !isAdmin() && currentUser.role !== 'Accountant');
 
-  if (isAdmin() && !$('usersPage')) {
+  if (!$('usersPage')) {
     const navigation = document.querySelector('.sidebottom');
     const userNav = document.createElement('button');
     userNav.className = 'nav';
@@ -108,16 +236,52 @@ function configureRoleUi() {
     const page = document.createElement('section');
     page.id = 'usersPage';
     page.className = 'page hidden';
-    page.innerHTML = `<div class="toolbar"><div><h2>User management</h2><p>Create accounts and assign access roles.</p></div></div><section class="panel user-panel"><h3>Create user</h3><form id="userForm"><div class="formgrid"><label>Username *<input name="username" minlength="3" maxlength="32" required></label><label>Temporary password *<input name="password" type="password" minlength="12" autocomplete="new-password" required><small>At least 12 characters.</small></label><label>Role *<select name="role" required><option>Accountant</option><option>Branch Manager</option><option>Admin</option></select></label><label id="userBranchField" class="hidden">Assigned branch *<select name="branch"></select></label></div><button class="primary" type="submit">Create user</button></form></section><section class="panel user-panel"><h3>Existing users</h3><div id="userList" class="user-list"></div></section><section class="panel user-panel"><h3>Transaction data</h3><p class="data-tools-note">Backup includes transaction records only. Reset removes all transactions but preserves user accounts and branches.</p><div class="data-tools"><button class="outline" id="backupTransactions">↓ Download transaction backup</button><button class="danger-button" id="resetTransactions">Reset all transactions</button></div></section>`;
+    page.innerHTML = `<div class="toolbar"><div><h2>${isAdmin() ? 'User management' : 'Users'}</h2><p>${isAdmin() ? 'Create accounts and assign access roles.' : 'View user accounts and their assigned roles.'}</p></div><button class="outline" id="changePasswordButton">Change password</button></div>${isAdmin() ? `<section class="panel user-panel"><h3>Create user</h3><form id="userForm"><div class="formgrid"><label>Username *<input name="username" minlength="3" maxlength="32" required></label><label>Temporary password *<input name="password" type="password" minlength="12" autocomplete="new-password" required><small>At least 12 characters.</small></label><label>Role *<select name="role" required>${isSuperAdmin() ? '<option>SuperAdmin</option>' : ''}<option>Accountant</option><option>Branch Manager</option><option>Admin</option></select></label><label id="userBranchField" class="hidden">Assigned branch *<select name="branch"></select></label></div><button class="primary" type="submit">Create user</button></form></section>` : ''}<section class="panel user-panel"><h3>Existing users</h3><div id="userList" class="user-list"></div></section>${isAdmin() ? `<section class="panel user-panel"><h3>Transaction data</h3><p class="data-tools-note">Backup includes transaction records only. Reset removes all transactions and transaction history while preserving user accounts and branches.</p><div class="data-tools"><button class="outline" id="backupTransactions">↓ Download transaction backup</button>${isSuperAdmin() ? '<button class="danger-button" id="resetTransactions">Reset all transactions</button>' : ''}</div></section>` : ''}`;
     document.querySelector('.main').append(page);
+    createPasswordModal();
+    $('changePasswordButton').onclick = () => {
+      $('passwordModal').classList.remove('hidden');
+      $('currentPassword').focus();
+    };
     document.addEventListener('click', event => {
       const target = event.target.closest('.nav');
       if (target?.dataset.page) pageTo(target.dataset.page);
     });
-    $('userForm').elements.role.onchange = () => {
-      $('userBranchField').classList.toggle('hidden', $('userForm').elements.role.value !== 'Branch Manager');
+    if (isAdmin()) {
+      $('userForm').elements.role.onchange = () => {
+        $('userBranchField').classList.toggle('hidden', $('userForm').elements.role.value !== 'Branch Manager');
+      };
+      $('userForm').onsubmit = createUser;
+    }
+  }
+  if (!$('editRequestsPanel')) {
+    const panel = document.createElement('section');
+    panel.id = 'editRequestsPanel';
+    panel.className = 'panel edit-requests-panel hidden';
+    panel.innerHTML = '<div class="panelhead"><div><h3>Pending transaction edit requests</h3><p>Pending edits require Admin or SuperAdmin approval.</p></div></div><div id="editRequestsList"></div>';
+    document.querySelector('#transactionsPage .toolbar').after(panel);
+  }
+  if (!$('toggleTransactionHistory')) {
+    const button = document.createElement('button');
+    button.id = 'toggleTransactionHistory';
+    button.className = 'outline';
+    button.textContent = 'Transaction History';
+    button.setAttribute('aria-expanded', 'false');
+    $('transactionsPage').querySelector('.toolbar').insertBefore(button, $('addTransaction'));
+    button.onclick = () => {
+      const panel = $('transactionHistoryPanel');
+      const isHidden = panel.classList.toggle('hidden');
+      button.textContent = isHidden ? 'Transaction History' : 'Hide Transaction History';
+      button.setAttribute('aria-expanded', String(!isHidden));
+      if (!isHidden) panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
     };
-    $('userForm').onsubmit = createUser;
+  }
+  if (!$('transactionHistoryPanel')) {
+    const panel = document.createElement('section');
+    panel.id = 'transactionHistoryPanel';
+    panel.className = 'panel transaction-history-panel hidden';
+    panel.innerHTML = '<div class="panelhead"><div><h3>Transaction History</h3><p>Recorded transaction changes and review actions.</p></div></div><div id="transactionHistoryList"></div>';
+    $('editRequestsPanel').after(panel);
   }
   document.querySelectorAll('.nav').forEach(button => {
     if (button.dataset.page !== 'users') button.onclick = () => pageTo(button.dataset.page);
@@ -127,11 +291,49 @@ function configureRoleUi() {
   });
 }
 
+function createPasswordModal() {
+  const modal = document.createElement('div');
+  modal.id = 'passwordModal';
+  modal.className = 'modal hidden';
+  modal.innerHTML = `<section class="modalbox"><div class="modalhead"><div><div class="eyebrow">ACCOUNT SECURITY</div><h2>Change password</h2></div><button type="button" class="close" id="closePasswordModal" aria-label="Close">×</button></div><form id="changePasswordForm"><div class="formgrid"><label>Current password<input id="currentPassword" name="currentPassword" type="password" autocomplete="current-password" maxlength="128" required></label><label>New password<input name="newPassword" type="password" autocomplete="new-password" minlength="12" maxlength="128" required><small>Use at least 12 characters.</small></label><label>Confirm new password<input name="confirmPassword" type="password" autocomplete="new-password" minlength="12" maxlength="128" required></label></div><div class="modalactions"><button type="button" class="outline" id="cancelPasswordChange">Cancel</button><button type="submit" class="primary">Update password</button></div><div class="auth-error" id="passwordError"></div></form></section>`;
+  document.body.append(modal);
+  const close = () => {
+    modal.classList.add('hidden');
+    $('changePasswordForm').reset();
+    $('passwordError').textContent = '';
+  };
+  $('closePasswordModal').onclick = close;
+  $('cancelPasswordChange').onclick = close;
+  $('changePasswordForm').onsubmit = async event => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const values = Object.fromEntries(new FormData(form));
+    if (values.newPassword !== values.confirmPassword) {
+      $('passwordError').textContent = 'New passwords do not match.';
+      return;
+    }
+    try {
+      await api('/api/change-password', {
+        method: 'POST',
+        body: JSON.stringify({ currentPassword: values.currentPassword, newPassword: values.newPassword }),
+      });
+      close();
+      toast('Password updated. Other sessions have been signed out.');
+    } catch (error) {
+      $('passwordError').textContent = error.message;
+    }
+  };
+}
+
 function pageTo(name) {
-  if (name === 'users' && !isAdmin()) return;
   document.querySelectorAll('.page').forEach(page => page.classList.add('hidden'));
   $(name + 'Page')?.classList.remove('hidden');
   $('quickAdd').classList.toggle('hidden', name !== 'dashboard' || !canCreateTransactions());
+  $('notificationWrap')?.classList.toggle('hidden', name !== 'dashboard');
+  if (name !== 'dashboard') {
+    $('notificationMenu')?.classList.add('hidden');
+    $('notificationBell')?.setAttribute('aria-expanded', 'false');
+  }
   document.querySelectorAll('.nav').forEach(button => button.classList.toggle('active', button.dataset.page === name));
   $('pageTitle').textContent = name === 'users' ? 'Users' : name[0].toUpperCase() + name.slice(1);
 }
@@ -152,17 +354,37 @@ async function createUser(event) {
 }
 
 async function loadUsers() {
-  if (!isAdmin()) return;
   const result = await api('/api/users');
   $('userList').innerHTML = result.users.length
-    ? result.users.map(user => `<div class="user-row"><strong>${escapeHtml(user.username)}</strong><span>${escapeHtml(user.role)}</span><small>${escapeHtml(user.branch || 'All branches')}</small>${user.role !== 'Admin' ? `<button class="deletebtn user-remove" data-remove-user="${escapeHtml(user.id)}" aria-label="Delete ${escapeHtml(user.role)} ${escapeHtml(user.username)}">Delete user</button>` : ''}</div>`).join('')
+    ? result.users.map(user => `<div class="user-row"><strong>${escapeHtml(user.username)}</strong><span>${escapeHtml(user.role)}</span><small>${escapeHtml(user.branch || 'All branches')}</small>${isAdmin() && user.role !== 'SuperAdmin' && (user.role !== 'Admin' || isSuperAdmin()) ? `<button class="deletebtn user-remove" data-remove-user="${escapeHtml(user.id)}" aria-label="Delete ${escapeHtml(user.role)} ${escapeHtml(user.username)}">Delete user</button>` : ''}</div>`).join('')
     : '<div class="empty">No user accounts found.</div>';
 }
 
 async function handleAdminActions(event) {
+  const reviewEdit = event.target.closest('[data-review-edit]');
+  if (reviewEdit) {
+    if (!isAdmin()) return;
+    const action = reviewEdit.dataset.action;
+    const confirmation = action === 'approve'
+      ? 'Approve this transaction edit and apply the changes?'
+      : 'Reject this transaction edit request?';
+    if (!confirm(confirmation)) return;
+    try {
+      await api('/api/transaction-edit-requests/' + encodeURIComponent(reviewEdit.dataset.reviewEdit), {
+        method: 'PATCH',
+        body: JSON.stringify({ action }),
+      });
+      await load();
+      toast(action === 'approve' ? 'Transaction edit approved.' : 'Transaction edit rejected.');
+    } catch (error) {
+      toast(error.message);
+    }
+    return;
+  }
+
   const removeUser = event.target.closest('[data-remove-user]');
   if (removeUser) {
-    if (!isAdmin() || !confirm('Delete this Accountant or Branch Manager account? The user will be signed out immediately.')) return;
+    if (!isAdmin() || !confirm('Delete this user account? The user will be signed out immediately.')) return;
     try {
       await api('/api/users/' + encodeURIComponent(removeUser.dataset.removeUser), { method: 'DELETE' });
       await loadUsers();
@@ -190,15 +412,15 @@ async function handleAdminActions(event) {
   }
 
   if (event.target.closest('#resetTransactions')) {
-    if (!isAdmin() || !confirm('This will permanently delete every transaction. User accounts and branches will be preserved. Continue?')) return;
-    if (prompt('Type RESET to confirm deleting all transactions:') !== 'RESET') {
+    if (!isSuperAdmin() || !confirm('This will permanently delete every transaction and transaction history record. User accounts and branches will be preserved. Continue?')) return;
+    if (prompt('Type RESET to confirm deleting all transaction data:') !== 'RESET') {
       toast('Transaction reset cancelled.');
       return;
     }
     try {
       const result = await api('/api/transactions', { method: 'DELETE' });
       await load();
-      toast(`Transaction data reset. ${result.deletedCount} records deleted; users and branches were preserved.`);
+      toast(`Transaction data reset. ${result.deletedCount} transactions and ${result.historyDeletedCount} history records deleted.`);
     } catch (error) {
       toast(error.message);
     }
@@ -207,12 +429,19 @@ async function handleAdminActions(event) {
 
 async function load() {
   db = await api('/api/data');
+  const [requests, history] = await Promise.all([
+    api('/api/transaction-edit-requests'),
+    api('/api/transaction-history'),
+  ]);
+  syncEditRequests(requests.requests, pendingEditRequestIds !== null);
+  transactionHistory = history.history;
   render();
+  renderTransactionHistory();
   if (isAdmin()) {
     const branches = $('userForm').elements.branch;
     branches.innerHTML = db.branches.map(branch => `<option value="${escapeHtml(branch)}">${escapeHtml(branch)}</option>`).join('');
-    await loadUsers();
   }
+  await loadUsers();
 }
 
 function options() {
@@ -263,8 +492,8 @@ function renderBranchBalances() {
     : '<div class="empty">No branches added.</div>';
 }
 
-function row(transaction, allowEdit = false) {
-  return `<tr><td>${escapeHtml(transaction.date)}</td><td>${escapeHtml(transaction.branch)}</td><td><span class="pill ${transaction.type}">${transaction.type === 'in' ? 'CASH IN' : 'CASH OUT'}</span></td><td>${escapeHtml(transaction.category)}</td><td>${escapeHtml(transaction.reference || '—')}</td><td class="right amount" style="color:${transaction.type === 'in' ? '#16865a' : '#d71920'}">${transaction.type === 'in' ? '+' : '−'}${peso(transaction.amount)}</td>${allowEdit ? `<td><button class="outline editbtn" data-edit="${escapeHtml(transaction.id)}" title="Edit transaction">Edit</button><button class="deletebtn" data-delete="${escapeHtml(transaction.id)}" title="Delete transaction">✕</button></td>` : ''}</tr>`;
+function row(transaction, allowEdit = false, allowDelete = false) {
+  return `<tr><td>${escapeHtml(transaction.date)}</td><td>${escapeHtml(transaction.branch)}</td><td><span class="pill ${transaction.type}">${transaction.type === 'in' ? 'CASH IN' : 'CASH OUT'}</span></td><td>${escapeHtml(transaction.category)}</td><td>${escapeHtml(transaction.reference || '—')}</td><td class="right amount" style="color:${transaction.type === 'in' ? '#16865a' : '#d71920'}">${transaction.type === 'in' ? '+' : '−'}${peso(transaction.amount)}</td>${allowEdit ? `<td><button class="outline editbtn" data-edit="${escapeHtml(transaction.id)}" title="Edit transaction">Edit</button>${allowDelete ? `<button class="deletebtn" data-delete="${escapeHtml(transaction.id)}" title="Delete transaction">✕</button>` : ''}</td>` : ''}</tr>`;
 }
 
 function renderRecent() {
@@ -282,8 +511,8 @@ function renderAll() {
     && (branch === 'all' || transaction.branch === branch)
     && [transaction.branch, transaction.category, transaction.reference, transaction.notes].join(' ').toLowerCase().includes(query));
   $('allRows').innerHTML = transactions.length
-    ? transactions.map(transaction => row(transaction, isAdmin())).join('')
-    : `<tr><td colspan="${isAdmin() ? 7 : 6}" class="empty">No matching transactions found.</td></tr>`;
+    ? transactions.map(transaction => row(transaction, canEditTransactions(), isSuperAdmin())).join('')
+    : `<tr><td colspan="${canEditTransactions() ? 7 : 6}" class="empty">No matching transactions found.</td></tr>`;
   $('recordCount').textContent = `${transactions.length} record${transactions.length === 1 ? '' : 's'}`;
 }
 
@@ -306,7 +535,7 @@ function openModal() {
 }
 
 function editTransaction(id) {
-  if (!isAdmin()) return;
+  if (!canEditTransactions()) return;
   const transaction = db.transactions.find(item => item.id === id);
   if (!transaction) return;
   openModal();
@@ -335,7 +564,7 @@ async function saveTransaction(event) {
   const form = event.currentTarget;
   const type = document.querySelector('input[name=type]:checked').value;
   try {
-    await api(editingTransactionId ? '/api/transactions/' + encodeURIComponent(editingTransactionId) : '/api/transactions', {
+    const result = await api(editingTransactionId ? '/api/transactions/' + encodeURIComponent(editingTransactionId) : '/api/transactions', {
       method: editingTransactionId ? 'PATCH' : 'POST',
       body: JSON.stringify({
         type,
@@ -351,7 +580,7 @@ async function saveTransaction(event) {
     closeModal();
     await load();
     editingTransactionId = null;
-    toast('Transaction saved successfully.');
+    toast(result.request ? 'Edit request submitted for approval.' : 'Transaction saved successfully.');
   } catch (error) {
     toast(error.message);
   }
@@ -365,7 +594,7 @@ async function handleTableAction(event) {
   }
   const deleteButton = event.target.closest('[data-delete]');
   if (deleteButton) {
-    if (!isAdmin() || !confirm('Delete this transaction? This cannot be undone.')) return;
+    if (!isSuperAdmin() || !confirm('Delete this transaction? This cannot be undone.')) return;
     try {
       await api('/api/transactions/' + encodeURIComponent(deleteButton.dataset.delete), { method: 'DELETE' });
       await load();
