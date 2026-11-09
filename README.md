@@ -20,6 +20,8 @@ The app can run on Netlify using a Netlify Function for the API and Supabase for
 3. If you have existing local accounts or records to keep, set those same variables in your local shell and run `npm run migrate:supabase` once before deployment. The import does not print passwords or password hashes. Do not run it after users have begun using the deployed app, because it replaces the stored application state.
 4. Deploy the site. Netlify runs `npm run build`, publishes `dist`, and routes `/api/*` requests to the function.
 
+To verify a deployment, open `https://<your-site>/.netlify/functions/api/setup-status` or `https://<your-site>/api/setup-status`; a working API returns JSON containing `setupRequired`. If the function URL works but the API route does not, check the rewrite in `netlify.toml`. If the response says the database state cannot be read, run the schema in the Supabase project whose URL/key are configured in Netlify. Function details are available in the Netlify function logs.
+
 On the first deployment without an import, sign in by creating the initial SuperAdmin account. Keep regular backups; Supabase is now the source of truth for deployed data. Netlify's temporary function filesystem is not used for application data.
 
 ## Roles

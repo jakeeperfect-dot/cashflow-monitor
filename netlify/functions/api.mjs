@@ -573,6 +573,13 @@ export async function handler(event) {
   } catch (error) {
     if (error.status) return response(error.status, { error: error.message });
     console.error('KDCashflow API request failed:', error);
-    return response(500, { error: 'The KDCashflow API could not complete the request. Check the Netlify Function and Supabase configuration.' });
+    const message = error.message || '';
+    if (message.includes('SUPABASE_URL') || message.includes('SUPABASE_SERVICE_ROLE_KEY')) {
+      return response(500, { error: 'The API function is running, but Netlify is missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY.' });
+    }
+    if (message.startsWith('Unable to load KDCashflow data:')) {
+      return response(500, { error: 'The API function is running, but it cannot read the Supabase state. Run supabase/schema.sql in the correct project and verify the Netlify Supabase credentials.' });
+    }
+    return response(500, { error: 'The KDCashflow API failed. Check the Netlify Function logs for the request error and verify the Supabase configuration.' });
   }
 }
