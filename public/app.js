@@ -739,7 +739,7 @@ async function start() {
   } catch (error) {
     showAuth(false);
     const message = $('authError');
-    if (message) message.textContent = 'Cannot connect to the local server. Please restart KDCashflow.';
+    if (message) message.textContent = 'Cannot connect to KDCashflow. Check that the API is deployed and its database is configured.';
   }
 }
 
