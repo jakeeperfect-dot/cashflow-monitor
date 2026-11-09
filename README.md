@@ -12,6 +12,11 @@ Standalone cash-in and cash-out monitoring for Kreme Donuts.
 4. On first launch, create the initial SuperAdmin account. Use a unique password with at least 12 characters.
 5. Admins can create additional accounts from the Users page; only SuperAdmins can create another SuperAdmin account.
 
+## Build and Netlify
+Run `npm install` and `npm run build` to copy the static frontend from `public/` into `dist/`. Netlify is configured to run `npm run build`, publish `dist`, and serve the frontend for deep links.
+
+**The full application cannot run on Netlify as currently implemented.** `server.js` is a long-running Node HTTP server that handles authentication and API requests and persists data in `data.json`. Netlify's static hosting does not run that server or provide durable local file storage, so deploying this build alone serves the UI but its data and authentication features will not work. Hosting the full app on Netlify requires moving the API to Netlify Functions and its data to a persistent external database.
+
 ## Roles
 - **SuperAdmin:** Access all features, including deleting individual transactions, resetting transaction data, and managing user accounts.
 - **Admin:** View, add, and edit transactions; manage branches; create users, and delete Accountant and Branch Manager accounts. Cannot delete transactions or reset transaction data.

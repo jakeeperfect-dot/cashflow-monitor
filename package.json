@@ -3,6 +3,6 @@
   "version": "1.0.0",
   "description": "Standalone cash-in and cash-out monitoring system",
   "main": "server.js",
-  "scripts": { "start": "node server.js", "dev": "node server.js" },
+  "scripts": { "start": "node server.js", "dev": "node server.js", "build": "node build.js" },
   "engines": { "node": ">=18" }
 }
