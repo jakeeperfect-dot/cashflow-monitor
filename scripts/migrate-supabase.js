@@ -6,9 +6,9 @@ const { createClient } = require('@supabase/supabase-js');
 
 async function main() {
   const supabaseUrl = process.env.SUPABASE_URL;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const serviceRoleKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!supabaseUrl || !serviceRoleKey) {
-    throw new Error('Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY before importing.');
+    throw new Error('Set SUPABASE_URL and SUPABASE_SECRET_KEY before importing.');
   }
 
   const dataPath = path.join(__dirname, '..', 'data.json');

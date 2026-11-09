@@ -16,7 +16,7 @@ Standalone cash-in and cash-out monitoring for Kreme Donuts.
 The app can run on Netlify using a Netlify Function for the API and Supabase for persistent storage. The standalone `server.js` continues to support local use with `data.json`.
 
 1. Create a Supabase project (for example, `kdcashmonitoring`) and run [`supabase/schema.sql`](./supabase/schema.sql) in its SQL Editor.
-2. In Netlify, set `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` from the Supabase project settings. Keep the service-role key private; never add it to frontend code or commit it.
+2. In Netlify, set `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY` and `SUPABASE_JWKS_URL` from the Supabase project's API Keys settings. Keep the secret key private; never add it to frontend code or commit it. (The legacy `SUPABASE_SERVICE_ROLE_KEY` name is still accepted as a fallback.)
 3. If you have existing local accounts or records to keep, set those same variables in your local shell and run `npm run migrate:supabase` once before deployment. The import does not print passwords or password hashes. Do not run it after users have begun using the deployed app, because it replaces the stored application state.
 4. Deploy the site. Netlify runs `npm run build`, publishes `dist`, and routes `/api/*` requests to the function.
 
