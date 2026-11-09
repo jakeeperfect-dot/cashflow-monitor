@@ -10,7 +10,10 @@
     "migrate:supabase": "node scripts/migrate-supabase.js"
   },
   "dependencies": {
+    "@supabase/server": "^1.9.2",
     "@supabase/supabase-js": "^2.57.4"
   },
-  "engines": { "node": ">=18" }
+  "engines": {
+    "node": ">=18"
+  }
 }
