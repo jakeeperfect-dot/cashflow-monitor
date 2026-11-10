@@ -1,7 +1,6 @@
 {
   "branches": [
-    "Kapatagan Main",
-    "Gensan Branch (Osmeña)"
+    "Kapatagan Main"
   ],
   "transactions": [],
   "users": [
@@ -32,13 +31,6 @@
       "role": "Accountant",
       "branch": null,
       "passwordHash": "9dbb2f6c0f7014ea345461171b94a8b0:fb9e0cd642991b02da5b5a337bf53aad8a7758fc2e75576322895c2ef5779c53c167d8d698a66df8ee4d1daab6ffb5d8c204d829fbf738097386de9d22d1d918"
-    },
-    {
-      "id": "ecd21480-e887-4c68-bc95-504ad6110306",
-      "username": "kd_joemel",
-      "role": "Branch Manager",
-      "branch": "Gensan Branch (Osmeña)",
-      "passwordHash": "766c82cb6717c191f7b5ea79c0c22ce8:e66de2bbd5b14cdc5cd448e9417f2cf4f27a3ffc6a2fd30a3b9982929d69b55d9484f7397cf5a080b316b3c246577b44d2f917dc828d99721bedad4a68c748f9"
     }
   ],
   "transactionEditRequests": [
