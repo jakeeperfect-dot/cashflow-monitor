@@ -23,6 +23,10 @@ async function api(url, options = {}) {
     headers: { 'Content-Type': 'application/json', ...options.headers },
     ...options,
   });
+  const contentType = response.headers.get('content-type') || '';
+  if (!contentType.toLowerCase().includes('application/json')) {
+    throw new Error(`The API returned a non-JSON response (HTTP ${response.status}). Verify the Netlify API function is deployed and /api/* is routed to it.`);
+  }
   const data = await response.json();
   if (!response.ok) throw new Error(data.error || 'Request failed.');
   return data;
@@ -739,7 +743,7 @@ async function start() {
   } catch (error) {
     showAuth(false);
     const message = $('authError');
-    if (message) message.textContent = 'Cannot connect to the local server. Please restart KDCashflow.';
+    if (message) message.textContent = error.message || 'Cannot connect to KDCashflow. Check the Netlify API function and Supabase configuration.';
   }
 }
 

@@ -13,9 +13,16 @@ Standalone cash-in and cash-out monitoring for Kreme Donuts.
 5. Admins can create additional accounts from the Users page; only SuperAdmins can create another SuperAdmin account.
 
 ## Build and Netlify
-Run `npm install` and `npm run build` to copy the static frontend from `public/` into `dist/`. Netlify is configured to run `npm run build`, publish `dist`, and serve the frontend for deep links.
+The app can run on Netlify using a Netlify Function for the API and Supabase for persistent storage. The standalone `server.js` continues to support local use with `data.json`.
 
-**The full application cannot run on Netlify as currently implemented.** `server.js` is a long-running Node HTTP server that handles authentication and API requests and persists data in `data.json`. Netlify's static hosting does not run that server or provide durable local file storage, so deploying this build alone serves the UI but its data and authentication features will not work. Hosting the full app on Netlify requires moving the API to Netlify Functions and its data to a persistent external database.
+1. Create a Supabase project (for example, `kdcashmonitoring`) and run [`supabase/schema.sql`](./supabase/schema.sql) in its SQL Editor.
+2. In Netlify, set `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY` and `SUPABASE_JWKS_URL` from the Supabase project's API Keys settings. Keep the secret key private; never add it to frontend code or commit it. (The legacy `SUPABASE_SERVICE_ROLE_KEY` name is still accepted as a fallback.)
+3. If you have existing local accounts or records to keep, set those same variables in your local shell and run `npm run migrate:supabase` once before deployment. The import does not print passwords or password hashes. Do not run it after users have begun using the deployed app, because it replaces the stored application state.
+4. Deploy the site. Netlify runs `npm run build`, publishes `dist`, and routes `/api/*` requests to the function.
+
+To verify a deployment, open `https://<your-site>/.netlify/functions/api/setup-status` or `https://<your-site>/api/setup-status`; a working API returns JSON containing `setupRequired`. If the function URL works but the API route does not, check the rewrite in `netlify.toml`. If the response says the database state cannot be read, run the schema in the Supabase project whose URL/key are configured in Netlify. Function details are available in the Netlify function logs.
+
+On the first deployment without an import, sign in by creating the initial SuperAdmin account. Keep regular backups; Supabase is now the source of truth for deployed data. Netlify's temporary function filesystem is not used for application data.
 
 ## Roles
 - **SuperAdmin:** Access all features, including deleting individual transactions, resetting transaction data, and managing user accounts.
